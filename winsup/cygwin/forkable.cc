@@ -187,11 +187,11 @@ stat_real_file_once (dll *d)
 				     MemorySectionName, pmsi1, 65536, NULL);
     }
   if (!NT_SUCCESS (status))
-    system_printf ("WARNING: Unable (ntstatus %y) to query real file for %W",
-		   status, d->ntname);
+    system_printf ("WARNING: Unable (ntstatus %y) to query real file for %W (%W)",
+		   status, d->ntname, pmsi1->SectionFileName.Buffer);
   else if (fhandle == INVALID_HANDLE_VALUE)
-    system_printf ("WARNING: Unable (ntstatus %y) to open real file for %W",
-		   fstatus, d->ntname);
+    system_printf ("WARNING: Unable (ntstatus %y) to open real file for %W (%W)",
+		   fstatus, d->ntname, pmsi1->SectionFileName.Buffer);
   if (fhandle == INVALID_HANDLE_VALUE)
     return false;
 
