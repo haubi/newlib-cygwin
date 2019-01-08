@@ -36,6 +36,10 @@ uname (struct utsname *name)
       cygwin_gethostname (name->nodename, sizeof (name->nodename) - 1);
 
       /* Cygwin dll release */
+      __small_sprintf (name->release, "%d.%d.%d-gentoo-r0",
+		       cygwin_version.dll_major / 1000,
+		       cygwin_version.dll_major % 1000,
+		       cygwin_version.dll_minor) ||
       __small_sprintf (name->release, "%d.%d.%d%s(%d.%d/%d/%d)",
 		       cygwin_version.dll_major / 1000,
 		       cygwin_version.dll_major % 1000,
