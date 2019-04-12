@@ -186,13 +186,13 @@ frok::child (volatile char * volatile here)
 
   cygheap->fdtab.fixup_after_fork (hParent);
 
-  /* If we haven't dynamically loaded any dlls, just signal the parent.
-     Otherwise, tell the parent that we've loaded all the dlls
-     and wait for the parent to fill in the loaded dlls' data/bss. */
-  if (!load_dlls)
-    sync_with_parent ("performed fork fixup", false);
-  else
+  /* If we have dynamically loaded some dlls, we need anoter stop to
+     wait for the parent to fill in the loaded dll's data/bss. */
+  if (load_dlls)
     sync_with_parent ("loaded dlls", true);
+
+  /* Signal the parent. */
+  sync_with_parent ("performed fork fixup", false);
 
   init_console_handler (myself->ctty > 0);
   ForceCloseHandle1 (fork_info->forker_finished, forker_finished);
@@ -420,20 +420,6 @@ frok::parent (volatile char * volatile stack_here)
   child.hProcess = hchild;
   ch.postfork (child);
 
-  /* Hopefully, this will succeed.  The alternative to doing things this
-     way is to reserve space prior to calling CreateProcess and then fill
-     it in afterwards.  This requires more bookkeeping than I like, though,
-     so we'll just do it the easy way.  So, terminate any child process if
-     we can't actually record the pid in the internal table. */
-  if (!child.remember (false))
-    {
-      this_errno = EAGAIN;
-#ifdef DEBUGGING0
-      error ("child remember failed");
-#endif
-      goto cleanup;
-    }
-
   /* CHILD IS STOPPED */
   debug_printf ("child is alive (but stopped)");
 
@@ -483,20 +469,20 @@ frok::parent (volatile char * volatile stack_here)
 	}
     }
 
-  /* Start thread, and then wait for it to reload dlls.  */
-  resume_child (forker_finished);
-  if (!ch.sync (child->pid, hchild, FORK_WAIT_TIMEOUT))
-    {
-      this_errno = EAGAIN;
-      error ("died waiting for dll loading");
-      goto cleanup;
-    }
-
   /* If DLLs were loaded in the parent, then the child has reloaded all
      of them and is now waiting to have all of the individual data and
      bss sections filled in. */
   if (load_dlls)
     {
+      /* Start the child up, and then wait for it to reload dlls.  */
+      resume_child (forker_finished);
+      if (!ch.sync (child->pid, hchild, FORK_WAIT_TIMEOUT))
+	{
+	  this_errno = EAGAIN;
+	  error ("died waiting for dll loading");
+	  goto cleanup;
+	}
+
       /* CHILD IS STOPPED */
       /* write memory of reloaded dlls */
       for (dll *d = dlls.istart (DLL_LOAD); d; d = dlls.inext ())
@@ -514,8 +500,31 @@ frok::parent (volatile char * volatile stack_here)
 	      goto cleanup;
 	    }
 	}
-      /* Start the child up again. */
-      resume_child (forker_finished);
+    }
+
+  /* Hopefully, this will succeed.  The alternative to doing things this
+     way is to reserve space prior to calling CreateProcess and then fill
+     it in afterwards.  This requires more bookkeeping than I like, though,
+     so we'll just do it the easy way.  So, terminate any child process if
+     we can't actually record the pid in the internal table.
+     Note: child.remember () needs the subsequent WFMO in ch.sync (),
+     to perform the asynchronous start of the controlling threads. */
+  if (!child.remember (false))
+    {
+      this_errno = EAGAIN;
+#ifdef DEBUGGING0
+      error ("child remember failed");
+#endif
+      goto cleanup;
+    }
+
+  /* Start the child up, finally. */
+  resume_child (forker_finished);
+  if (!ch.sync (child->pid, hchild, FORK_WAIT_TIMEOUT))
+    {
+      this_errno = EAGAIN;
+      error ("died waiting for dll loading");
+      goto cleanup;
     }
 
   ForceCloseHandle (forker_finished);
